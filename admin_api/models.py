@@ -12,6 +12,7 @@ class ModelRegistrationRequest(BaseModel):
     model_id: str = Field(..., example="fraudnet-v1")
     model_version: str = Field(..., example="1.0.0")
     storage_path: str = Field(..., example="s3://bucket/models/fraudnet.pt")
+    config_path: Optional[str] = Field(default=None, example="inference/config_fraudnet.json")
     schema_definition: Dict[str, Any]
     drift_thresholds: Dict[str, float] = Field(default={"psi_threshold": 0.25, "auc_threshold": 0.72})
     framework: str = Field(default="pytorch")

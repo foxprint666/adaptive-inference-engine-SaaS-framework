@@ -12,7 +12,11 @@ all keys to the same cluster slot.
 import json
 import logging
 from typing import Dict, Any, List, Optional
-import redis
+
+try:
+    import redis
+except ImportError:  # pragma: no cover - exercised only in minimal environments
+    redis = None
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +39,8 @@ class TenantRedisClient:
             redis_url: Redis connection URL (e.g., redis://localhost:6379/0)
             tenant_id: Unique identifier for the tenant (e.g., "client-a")
         """
+        if redis is None:
+            raise ImportError("redis is required to create TenantRedisClient")
         try:
             self.client = redis.from_url(redis_url, decode_responses=True)
             self.client.ping()

@@ -9,6 +9,7 @@ import os
 import logging
 import pickle
 from typing import Dict, Any
+import numpy as np
 from inference.model_runtime import ModelRuntime
 
 try:
@@ -47,12 +48,20 @@ class ChurnRuntime(ModelRuntime):
             model_path: Path to .pkl or .joblib file
         """
         if not os.path.exists(model_path):
-            logger.warning(f"Model path {model_path} does not exist. Using untrained model.")
+            logger.warning(f"Model path {model_path} does not exist. Using deterministic demo model.")
             self.model_instance = RandomForestClassifier(
                 n_estimators=10,
                 max_depth=5,
                 random_state=42
             )
+            demo_x = np.array([
+                [22, 2, 25.0, 4, 0],
+                [58, 72, 120.0, 0, 2],
+                [35, 8, 45.0, 3, 0],
+                [46, 36, 85.0, 1, 1],
+            ])
+            demo_y = np.array([1, 0, 1, 0])
+            self.model_instance.fit(demo_x, demo_y)
             return
 
         try:

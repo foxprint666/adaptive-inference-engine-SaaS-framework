@@ -25,6 +25,7 @@ class ModelMetadata:
     model_id: str
     model_version: str
     storage_path: str  # e.g., /app/models/model_baseline.pt or s3://bucket/path
+    config_path: str  # e.g., inference/config_fraudnet.json
     schema_definition: Dict  # Feature schema from config.json
     drift_thresholds: Dict  # {"psi_threshold": 0.25, "auc_threshold": 0.72}
     framework: str  # "pytorch", "sklearn", etc.
@@ -59,6 +60,7 @@ class TenantModelRegistry:
         schema_definition: Dict,
         drift_thresholds: Dict,
         framework: str = "pytorch",
+        config_path: Optional[str] = None,
     ) -> ModelMetadata:
         """
         Register a model for a tenant.
@@ -71,6 +73,7 @@ class TenantModelRegistry:
             schema_definition: Feature schema dict
             drift_thresholds: Drift detection thresholds dict
             framework: ML framework ("pytorch", "sklearn", etc.)
+            config_path: Path to model config. Defaults to storage_path for legacy callers.
             
         Returns:
             ModelMetadata object
@@ -82,6 +85,7 @@ class TenantModelRegistry:
             model_id=model_id,
             model_version=model_version,
             storage_path=storage_path,
+            config_path=config_path or storage_path,
             schema_definition=schema_definition,
             drift_thresholds=drift_thresholds,
             framework=framework,

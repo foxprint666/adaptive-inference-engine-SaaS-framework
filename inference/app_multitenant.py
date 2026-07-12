@@ -20,9 +20,14 @@ from typing import Dict, Any, Optional
 from fastapi import FastAPI, HTTPException, status, Header
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-import redis
+
+try:
+    import redis
+except ImportError:  # pragma: no cover - only for minimal test environments
+    redis = None
 
 from inference.fraudnet_runtime import FraudNetRuntime
+from inference.churn_runtime import ChurnRuntime
 from inference.tenant_redis_client import TenantRedisClient
 from inference.tenant_model_registry import TenantModelRegistry
 
@@ -45,6 +50,8 @@ DEVICE = os.getenv("DEVICE", "cpu")
 
 # Global Redis connection for admin operations
 try:
+    if redis is None:
+        raise ImportError("redis package is not installed")
     redis_client = redis.from_url(REDIS_URL, decode_responses=True)
     logger.info("Connected to global Redis for admin operations")
 except Exception as e:
@@ -68,8 +75,12 @@ def get_tenant_redis_client(tenant_id: str) -> TenantRedisClient:
 
 
 def initialize_tenant_model(
-    tenant_id: str, model_id: str, config_path: str
-) -> Optional[FraudNetRuntime]:
+    tenant_id: str,
+    model_id: str,
+    config_path: str,
+    framework: str = "pytorch",
+    model_path: Optional[str] = None,
+) -> Optional[Any]:
     """
     Initialize a ModelRuntime for a specific tenant.
     
@@ -89,10 +100,16 @@ def initialize_tenant_model(
             logger.debug(f"Model {model_id} already initialized for {tenant_id}")
             return model_runtimes[tenant_id][model_id]
         
-        # Create new runtime
-        runtime = FraudNetRuntime(config_path, device=DEVICE)
-        model_path = os.path.join(MODELS_DIR, f"model_{MODEL_ROLE}_{tenant_id}.pt")
-        runtime.load(model_path)
+        if framework == "sklearn":
+            runtime = ChurnRuntime(config_path)
+            resolved_model_path = model_path or os.path.join(MODELS_DIR, f"{tenant_id}_{model_id}.pkl")
+        elif framework == "pytorch":
+            runtime = FraudNetRuntime(config_path, device=DEVICE)
+            resolved_model_path = model_path or os.path.join(MODELS_DIR, f"model_{MODEL_ROLE}_{tenant_id}.pt")
+        else:
+            raise ValueError(f"Unsupported model framework: {framework}")
+
+        runtime.load(resolved_model_path)
         
         model_runtimes[tenant_id][model_id] = runtime
         logger.info(f"Initialized model {model_id} for tenant {tenant_id}")
@@ -117,6 +134,7 @@ class TenantRegistrationRequest(BaseModel):
     model_id: str
     model_version: str
     config_path: str  # Path to config.json
+    storage_path: Optional[str] = None  # Path to model binary; optional for demos
     schema_definition: Dict[str, Any]
     drift_thresholds: Dict[str, float]
     framework: str = "pytorch"
@@ -161,7 +179,8 @@ def register_tenant(
             tenant_id=request.tenant_id,
             model_id=request.model_id,
             model_version=request.model_version,
-            storage_path=request.config_path,
+            storage_path=request.storage_path or "",
+            config_path=request.config_path,
             schema_definition=request.schema_definition,
             drift_thresholds=request.drift_thresholds,
             framework=request.framework,
@@ -169,7 +188,11 @@ def register_tenant(
         
         # Initialize the model
         runtime = initialize_tenant_model(
-            request.tenant_id, request.model_id, request.config_path
+            request.tenant_id,
+            request.model_id,
+            request.config_path,
+            framework=request.framework,
+            model_path=request.storage_path,
         )
         
         if not runtime:
@@ -252,7 +275,11 @@ def predict(
                 )
             
             runtime = initialize_tenant_model(
-                x_tenant_id, x_model_id, metadata.storage_path
+                x_tenant_id,
+                x_model_id,
+                metadata.config_path,
+                framework=metadata.framework,
+                model_path=metadata.storage_path,
             )
             if not runtime:
                 raise HTTPException(

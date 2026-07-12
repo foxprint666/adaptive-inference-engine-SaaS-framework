@@ -59,14 +59,14 @@ A production-ready, multi-tenant Machine Learning Operations (MLOps) platform th
 - **Logical Isolation**: RabbitMQ virtual hosts per tenant, Redis namespace prefixes
 - **Telemetry Isolation**: Client A data never leaks into Client B drift detection
 
-### Phase 3: Production Hardening & Control Plane ✅
+### Phase 3: Production Hardening & Control Plane ⚙️ in progress
 - **FastAPI Admin Control Plane**:
   - `/register-tenant` — Self-service tenant registration
   - `/models/register` — Upload models and configure drift thresholds
   - `/models/{id}/retrain` — Manually initiate EWC retraining
   - `/health`, `/status` — Observability endpoints
 
-- **Async Retraining**: Ray Serve worker pool (avoids PyTorch CUDA fork conflicts)
+- **Async Retraining**: request boundary exists; Ray Serve/Celery execution backend is a next step
 - **Rate Limiting**: Token bucket algorithm per tenant
 - **Auth & Authorization**: Bearer token validation, X-Tenant-ID header enforcement
 - **Prometheus Metrics**: Per-tenant drift detection, retraining latency, request throughput
@@ -156,7 +156,7 @@ adaptive-inference-engine-SaaS-framework/
 │   ├── app.py                         # FastAPI admin endpoints (Phase 3)
 │   ├── models.py                      # Pydantic schemas (Phase 3)
 │   ├── auth.py                        # Token validation (Phase 3)
-│   ├── retraining_orchestrator.py     # Ray Serve integration (Phase 3)
+│   ├── retraining_orchestrator.py     # Retraining job boundary (Phase 3)
 │   ├── rate_limiter.py                # Token bucket middleware (Phase 3)
 │   ├── Dockerfile
 │   └── requirements.txt
@@ -166,20 +166,6 @@ adaptive-inference-engine-SaaS-framework/
 │
 ├── database/                           # Phase 2-3: Persistence
 │   └── tenant_model_registry.sql      # PostgreSQL schema
-│
-├── kubernetes/                         # Phase 3: K8s Deployment
-│   ├── base/                          # Kustomize base
-│   │   ├── namespace.yaml
-│   │   ├── inference-deployment.yaml
-│   │   ├── worker-deployment.yaml
-│   │   ├── admin-api-deployment.yaml
-│   │   ├── envoy-configmap.yaml
-│   │   └── kustomization.yaml
-│   │
-│   └── overlays/                      # Kustomize overlays
-│       ├── dev/
-│       ├── staging/
-│       └── prod/
 │
 ├── test_phase1_generality.py          # Phase 1: Acid test
 ├── test_phase2_multitenant.py         # Phase 2: Isolation test
@@ -207,11 +193,11 @@ adaptive-inference-engine-SaaS-framework/
 
 ### Production Hardening (Phase 3)
 ✅ Self-service tenant registration
-✅ Ray Serve async retraining (avoids CUDA fork issues)
+⚙️ Retraining request boundary; Ray Serve/Celery backend pending
 ✅ Token bucket rate limiting per tenant
 ✅ Bearer token authentication
 ✅ Prometheus metrics and Grafana dashboards
-✅ PostgreSQL for persistent model registry
+⚙️ PostgreSQL schema included; runtime registry is still in memory
 
 ## Testing
 

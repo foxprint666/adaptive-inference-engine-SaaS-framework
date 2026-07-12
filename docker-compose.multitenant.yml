@@ -1,0 +1,37 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  inference:
+    build:
+      context: .
+      dockerfile: inference/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      DEVICE: cpu
+    ports:
+      - "8080:8080"
+    depends_on:
+      - redis
+
+  admin-api:
+    build:
+      context: .
+      dockerfile: admin_api/Dockerfile
+    environment:
+      SECRET_KEY: local-dev-secret
+    ports:
+      - "8003:8003"
+
+  worker:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile.worker
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      TENANT_ID: client-a
+      MODEL_ID: fraudnet-v1
+    depends_on:
+      - redis
