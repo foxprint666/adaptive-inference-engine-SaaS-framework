@@ -1,0 +1,43 @@
+{
+  "model": {
+    "name": "FraudNet",
+    "version": "1.0.0",
+    "framework": "pytorch",
+    "input_shape": [5]
+  },
+  "features": {
+    "amount": {
+      "type": "float",
+      "description": "Transaction amount or character length difference"
+    },
+    "distance": {
+      "type": "float",
+      "description": "Spatial distance or bot flag proxy"
+    },
+    "velocity": {
+      "type": "float",
+      "description": "Temporal frequency or minor edit proxy"
+    },
+    "age": {
+      "type": "float",
+      "description": "Account age or page title length proxy"
+    },
+    "risk_score": {
+      "type": "float",
+      "description": "Internal fraud probability or anonymous flag proxy"
+    }
+  },
+  "metrics": {
+    "drift_detection": {
+      "psi_threshold": 0.25,
+      "auc_threshold": 0.72,
+      "window_size": 1000,
+      "check_interval_seconds": 5.0
+    },
+    "ewc": {
+      "lambda_regularization": 800.0,
+      "epochs": 20,
+      "learning_rate": 0.005
+    }
+  }
+}

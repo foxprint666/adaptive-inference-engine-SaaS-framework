@@ -1,0 +1,38 @@
+{
+  "model": {
+    "name": "ChurnPredictor",
+    "version": "2.0.0",
+    "framework": "sklearn",
+    "input_shape": [5]
+  },
+  "features": {
+    "customer_age": {
+      "type": "int",
+      "description": "Customer age in years"
+    },
+    "tenure_months": {
+      "type": "int",
+      "description": "Months as a customer"
+    },
+    "monthly_spend": {
+      "type": "float",
+      "description": "Monthly service spend in dollars"
+    },
+    "support_tickets": {
+      "type": "int",
+      "description": "Number of support tickets filed"
+    },
+    "contract_type": {
+      "type": "int",
+      "description": "0=month-to-month, 1=one-year, 2=two-year"
+    }
+  },
+  "metrics": {
+    "drift_detection": {
+      "psi_threshold": 0.20,
+      "auc_threshold": 0.68,
+      "window_size": 500,
+      "check_interval_seconds": 5.0
+    }
+  }
+}
