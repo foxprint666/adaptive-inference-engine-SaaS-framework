@@ -5,6 +5,7 @@ State is persisted through TenantModelRegistry. Set DATABASE_URL to use
 PostgreSQL; omit it for the in-memory development backend.
 """
 
+import os
 import time
 from datetime import datetime, timezone
 from typing import Dict
@@ -32,6 +33,49 @@ started_at = time.time()
 rate_limiter = RateLimiter()
 model_registry = TenantModelRegistry()
 retraining_jobs: Dict[str, Dict] = {}
+
+# Fix 4: all registered storage_path values must resolve inside this directory
+SAFE_MODEL_DIR: str = os.path.realpath(
+    os.getenv("SAFE_MODEL_DIR", os.getenv("MODELS_DIR", "/app/models"))
+)
+
+
+def _validate_storage_path(tenant_id: str, raw_path: str) -> str:
+    """
+    Reject any storage_path that escapes SAFE_MODEL_DIR/{tenant_id}/.
+
+    Uses os.path.realpath() to resolve symlinks before the prefix check,
+    preventing attacks via relative components (../../) or symlink chains.
+
+    Accepts:
+      - A bare filename:       "fraudnet_v2.pt"   → /app/models/{tenant_id}/fraudnet_v2.pt
+      - A full allowed path:   "/app/models/{tenant_id}/model.pt"
+
+    Rejects:
+      - "../../etc/passwd"
+      - "/app/models/other_tenant/model.pt"  (cross-tenant)
+      - Any path that resolves outside SAFE_MODEL_DIR
+    """
+    safe_tenant_dir = os.path.realpath(os.path.join(SAFE_MODEL_DIR, tenant_id))
+    # Treat raw_path as a filename — strip any directory components first
+    # so tenants cannot navigate laterally within the safe root
+    filename = os.path.basename(raw_path) if raw_path else ""
+    if not filename:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="storage_path must be a non-empty filename (e.g. 'model_v2.pt').",
+        )
+    resolved = os.path.realpath(os.path.join(safe_tenant_dir, filename))
+    # Double-check the resolved path is strictly inside the tenant directory
+    if not resolved.startswith(safe_tenant_dir + os.sep) and resolved != safe_tenant_dir:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"storage_path '{raw_path}' resolves outside the permitted directory. "
+                f"Provide only a filename, not a path."
+            ),
+        )
+    return resolved
 
 
 def require_tenant(authorization: str, x_tenant_id: str) -> str:
@@ -87,12 +131,14 @@ def register_model(
     authorization: str = Header(...),
 ):
     require_tenant(authorization, x_tenant_id)
+    # Fix 4: validate and sanitize storage_path before it touches the filesystem
+    safe_path = _validate_storage_path(x_tenant_id, request.storage_path)
     config_path = request.config_path or _default_config_for_framework(request.framework)
     metadata = model_registry.register_model(
         tenant_id=x_tenant_id,
         model_id=request.model_id,
         model_version=request.model_version,
-        storage_path=request.storage_path,
+        storage_path=safe_path,
         config_path=config_path,
         schema_definition=request.schema_definition,
         drift_thresholds=request.drift_thresholds,

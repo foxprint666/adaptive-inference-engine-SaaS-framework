@@ -40,8 +40,12 @@ from typing import Dict, List, Optional, Tuple
 from celery import Celery
 
 from worker.worker_multitenant import summarize_tenant_model
+from inference.storage_backend import get_storage_backend
 
 logger = logging.getLogger(__name__)
+
+# Module-level storage backend (local or S3 based on STORAGE_BACKEND env var)
+_storage = get_storage_backend()
 
 # ---------------------------------------------------------------------------
 # Celery application
@@ -70,9 +74,50 @@ celery_app.conf.update(
 
 
 # ---------------------------------------------------------------------------
-# EWC helpers
+# Fix 1: Redis Pub/Sub — publish model_reload event after successful retrain
 # ---------------------------------------------------------------------------
 
+
+def _publish_model_reload(tenant_id: str, model_id: str, storage_key: str) -> None:
+    """
+    Publish a ``model_reload`` event to the Redis Pub/Sub channel
+    ``mlops:model_updates``.
+
+    The inference service subscribes to this channel and evicts the stale
+    in-memory runtime on receipt, triggering a lazy reload on the next
+    prediction request.  If the inference pods use S3, they also pre-warm
+    their local cache before serving traffic.
+
+    This is a best-effort publish — a failure here is logged but does NOT
+    fail the retraining task.  The stale model will eventually be replaced
+    on pod restart or when the inference service's ETag check fires.
+    """
+    try:
+        import redis as _redis
+        import json
+
+        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+        r = _redis.from_url(redis_url, decode_responses=True)
+        message = json.dumps({
+            "event": "model_reload",
+            "tenant_id": tenant_id,
+            "model_id": model_id,
+            "storage_key": storage_key,
+        })
+        n_receivers = r.publish("mlops:model_updates", message)
+        logger.info(
+            "Published model_reload event — tenant=%s model=%s key=%s receivers=%d",
+            tenant_id, model_id, storage_key, n_receivers,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Could not publish model_reload event (non-fatal): %s", exc
+        )
+
+
+# ---------------------------------------------------------------------------
+# EWC helpers
+# ---------------------------------------------------------------------------
 
 def _compute_fisher_diagonal(
     model,
@@ -195,15 +240,23 @@ def _run_ewc_retraining(
     """
     Execute EWC fine-tuning on a PyTorch FraudNet model.
 
-    Loads the model from the Tenant Model Registry, freezes a snapshot of the
-    current weights, computes the Fisher diagonal, then runs ``epochs`` training
-    steps with the EWC regularisation term added to the task loss.
+    Fix 6 — EWC scope flag:
+        Reads ``use_ewc`` from the model's config JSON (default: true).
+        When false, runs standard Adam fine-tuning without the expensive
+        Fisher Information Matrix computation.  Recommended for small tabular
+        models (< 1 000 parameters) where EWC overhead exceeds its benefit.
 
-    Falls back gracefully if PyTorch is not installed or if model artifacts are
-    missing (returns a status dict indicating the skip reason).
+    Fix 5 — S3 storage:
+        Model bytes are loaded/saved via ``_storage`` (LocalStorageBackend or
+        S3StorageBackend) rather than calling ``torch.save`` / ``open`` directly.
+
+    Fix 1 — Hot-swap signal:
+        After a successful weight save, publishes a ``model_reload`` event to
+        Redis so inference pods swap the model without restarting.
     """
     try:
         import torch
+        import torch.nn.functional as F
         from torch.utils.data import DataLoader
     except ImportError:
         logger.warning("PyTorch not installed — skipping EWC retraining")
@@ -218,6 +271,22 @@ def _run_ewc_retraining(
         logger.warning("No registered model for %s/%s — skipping", tenant_id, model_id)
         return {"skipped": True, "reason": "model_not_registered"}
 
+    # Fix 6: read use_ewc flag from config (default True)
+    use_ewc = True
+    try:
+        import json as _json
+        if metadata.config_path and os.path.isfile(metadata.config_path):
+            with open(metadata.config_path) as cf:
+                cfg = _json.load(cf)
+            use_ewc = bool(cfg.get("use_ewc", True))
+            if not use_ewc:
+                logger.info(
+                    "use_ewc=false for %s/%s — running standard fine-tuning",
+                    tenant_id, model_id,
+                )
+    except Exception as exc:
+        logger.debug("Could not read use_ewc from config: %s", exc)
+
     # Build dataset from telemetry records
     dataset = _build_tensor_dataset(records)
     if dataset is None or len(dataset) < 4:
@@ -225,14 +294,15 @@ def _run_ewc_retraining(
             "Insufficient training data for %s/%s (%d records) — skipping",
             tenant_id,
             model_id,
-            len(records),
+            len(records) if records else 0,
         )
-        return {"skipped": True, "reason": "insufficient_data", "records": len(records)}
+        return {"skipped": True, "reason": "insufficient_data", "records": len(records) if records else 0}
 
-    # Load model runtime (always CPU for Celery safety)
+    # Fix 5: load model bytes via storage backend (supports S3 + local cache)
     runtime = FraudNetRuntime(metadata.config_path, device=device)
     try:
-        runtime.load(metadata.storage_path)
+        local_path = _storage.warm_cache(metadata.storage_path)
+        runtime.load(local_path)
     except Exception as exc:
         logger.warning(
             "Could not load model weights for %s/%s: %s — skipping", tenant_id, model_id, exc
@@ -245,62 +315,86 @@ def _run_ewc_retraining(
 
     net = net.to(device)
 
-    # Snapshot optimal weights before retraining
-    optimal_params: Dict[str, "torch.Tensor"] = {
-        name: param.clone().detach().cpu()
-        for name, param in net.named_parameters()
-        if param.requires_grad
-    }
-
     loader = DataLoader(dataset, batch_size=min(32, len(dataset)), shuffle=True)
-
-    # Compute Fisher diagonal on current data
-    fisher = _compute_fisher_diagonal(net, loader, device=device)
-
-    # EWC fine-tuning loop
-    import torch.nn.functional as F
 
     optimizer = torch.optim.Adam(net.parameters(), lr=lr)
     net.train()
 
-    losses = []
-    for epoch in range(epochs):
-        epoch_loss = 0.0
-        for batch_x, batch_y in loader:
-            batch_x = batch_x.to(device)
-            batch_y = batch_y.to(device)
+    losses: List[float] = []
 
-            optimizer.zero_grad()
-            output = net(batch_x)
-            task_loss = F.binary_cross_entropy_with_output(
-                output.squeeze(), batch_y.float()
-            )
-            ewc_penalty = _ewc_loss(net, fisher, optimal_params, lambda_reg, device)
-            total_loss = task_loss + ewc_penalty
-            total_loss.backward()
-            optimizer.step()
+    if use_ewc:
+        # ── EWC path: Fisher diagonal + regularisation loss ──────────────
+        # Snapshot optimal weights before retraining
+        optimal_params: Dict[str, "torch.Tensor"] = {
+            name: param.clone().detach().cpu()
+            for name, param in net.named_parameters()
+            if param.requires_grad
+        }
+        fisher = _compute_fisher_diagonal(net, loader, device=device)
 
-            epoch_loss += total_loss.item()
+        for epoch in range(epochs):
+            epoch_loss = 0.0
+            for batch_x, batch_y in loader:
+                batch_x = batch_x.to(device)
+                batch_y = batch_y.to(device)
 
-        avg_loss = epoch_loss / max(len(loader), 1)
-        losses.append(avg_loss)
-        if (epoch + 1) % 5 == 0:
-            logger.debug("EWC epoch %d/%d  loss=%.4f", epoch + 1, epochs, avg_loss)
+                optimizer.zero_grad()
+                output = net(batch_x)
+                task_loss = F.binary_cross_entropy_with_output(
+                    output.squeeze(), batch_y.float()
+                )
+                ewc_penalty = _ewc_loss(net, fisher, optimal_params, lambda_reg, device)
+                total_loss = task_loss + ewc_penalty
+                total_loss.backward()
+                optimizer.step()
 
-    # Persist updated weights
+                epoch_loss += total_loss.item()
+
+            avg_loss = epoch_loss / max(len(loader), 1)
+            losses.append(avg_loss)
+            if (epoch + 1) % 5 == 0:
+                logger.debug("EWC epoch %d/%d  loss=%.4f", epoch + 1, epochs, avg_loss)
+    else:
+        # ── Standard Adam path: no Fisher, no EWC regularisation ─────────
+        for epoch in range(epochs):
+            epoch_loss = 0.0
+            for batch_x, batch_y in loader:
+                batch_x = batch_x.to(device)
+                batch_y = batch_y.to(device)
+
+                optimizer.zero_grad()
+                output = net(batch_x)
+                loss = F.binary_cross_entropy_with_output(
+                    output.squeeze(), batch_y.float()
+                )
+                loss.backward()
+                optimizer.step()
+
+                epoch_loss += loss.item()
+
+            avg_loss = epoch_loss / max(len(loader), 1)
+            losses.append(avg_loss)
+            if (epoch + 1) % 5 == 0:
+                logger.debug("Standard epoch %d/%d  loss=%.4f", epoch + 1, epochs, avg_loss)
+
+    # Fix 5: save updated weights via storage backend
     try:
-        torch.save(net.state_dict(), metadata.storage_path)
+        import io
+        buf = io.BytesIO()
+        torch.save(net.state_dict(), buf)
+        _storage.save_model_bytes(metadata.storage_path, buf.getvalue())
         logger.info(
-            "EWC retraining complete for %s/%s — saved to %s",
-            tenant_id,
-            model_id,
-            metadata.storage_path,
+            "Retraining complete for %s/%s — saved to %s (use_ewc=%s)",
+            tenant_id, model_id, metadata.storage_path, use_ewc,
         )
+        # Fix 1: hot-swap signal to inference pods
+        _publish_model_reload(tenant_id, model_id, metadata.storage_path)
     except Exception as exc:
         logger.warning("Could not save updated weights: %s", exc)
 
     return {
         "skipped": False,
+        "use_ewc": use_ewc,
         "epochs": epochs,
         "final_loss": losses[-1] if losses else None,
         "initial_loss": losses[0] if losses else None,
@@ -316,9 +410,12 @@ def _run_sklearn_retraining(
     """
     Refit a scikit-learn model on the latest telemetry records.
 
-    Uses the Tenant Model Registry to locate the serialised model and config,
-    refits using the labelled telemetry window, and persists back to the same
-    path.
+    Fix 5 — S3 storage:
+        Loads and saves the pickled model via ``_storage`` (Local or S3 backend)
+        instead of direct open() calls, enabling horizontal scaling.
+
+    Fix 1 — Hot-swap signal:
+        Publishes a ``model_reload`` event after successful save.
     """
     try:
         import pickle
@@ -350,8 +447,10 @@ def _run_sklearn_retraining(
     if len(X_rows) < 4:
         return {"skipped": True, "reason": "insufficient_data", "records": len(X_rows)}
 
+    # Fix 5: load via storage backend (handles S3 warm cache)
     try:
-        with open(metadata.storage_path, "rb") as f:
+        local_path = _storage.warm_cache(metadata.storage_path)
+        with open(local_path, "rb") as f:
             clf = pickle.load(f)
     except Exception as exc:
         return {"skipped": True, "reason": "model_load_failed", "error": str(exc)}
@@ -361,8 +460,11 @@ def _run_sklearn_retraining(
 
     try:
         clf.fit(X, y)
-        with open(metadata.storage_path, "wb") as f:
-            pickle.dump(clf, f)
+        # Fix 5: save via storage backend
+        buf = pickle.dumps(clf)
+        _storage.save_model_bytes(metadata.storage_path, buf)
+        # Fix 1: hot-swap signal
+        _publish_model_reload(tenant_id, model_id, metadata.storage_path)
     except Exception as exc:
         return {"skipped": True, "reason": "training_failed", "error": str(exc)}
 

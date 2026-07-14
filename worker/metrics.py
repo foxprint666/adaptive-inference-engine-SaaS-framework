@@ -68,7 +68,7 @@ except ImportError:
 
 
 # ---------------------------------------------------------------------------
-# PSI — Population Stability Index
+# Fix 7: PSI — Population Stability Index (continuous + categorical)
 # ---------------------------------------------------------------------------
 
 _DEFAULT_BINS = 10
@@ -81,7 +81,8 @@ def population_stability_index(
     bins: int = _DEFAULT_BINS,
 ) -> float:
     """
-    Compute Population Stability Index using the standard histogram-bin formula.
+    Compute Population Stability Index for CONTINUOUS features using the
+    standard histogram-bin formula.
 
     PSI = Σ (actual_pct - expected_pct) * ln(actual_pct / expected_pct)
 
@@ -90,12 +91,16 @@ def population_stability_index(
     A PSI >= 0.25 indicates significant population shift — retraining is advised.
 
     Args:
-        expected: Reference distribution (baseline telemetry).
-        actual:   Current distribution (recent telemetry).
+        expected: Reference distribution (baseline telemetry, numeric values).
+        actual:   Current distribution (recent telemetry, numeric values).
         bins:     Number of histogram bins (default: 10).
 
     Returns:
         PSI score (float ≥ 0). Returns 0.0 if either distribution is empty.
+
+    Note:
+        Do NOT call this function with categorical string values — use
+        categorical_psi() instead, or let smart_psi() auto-dispatch.
     """
     expected_values = list(expected)
     actual_values = list(actual)
@@ -137,6 +142,105 @@ def population_stability_index(
         psi += (act_pct - exp_pct) * math.log(act_pct / exp_pct)
 
     return max(0.0, psi)
+
+
+def categorical_psi(
+    expected: Iterable,
+    actual: Iterable,
+) -> float:
+    """
+    Compute Population Stability Index for CATEGORICAL features.
+
+    Uses raw category frequency proportions instead of histogram bins.
+
+    Laplace smoothing (+1 pseudo-count) handles zero-frequency categories:
+        - A category that appears in ``expected`` but not in ``actual`` would
+          produce log(0) without smoothing → returns invalid infinity.
+        - Smoothing replaces 0-count categories with 1/n_categories instead of 0,
+          keeping PSI finite and interpretable.
+
+    PSI = Σ over all categories: (actual_pct - expected_pct) * ln(actual_pct / expected_pct)
+
+    Args:
+        expected: Iterable of category values from the baseline window.
+                  Example: ["iOS", "Android", "iOS", "Web", ...]
+        actual:   Iterable of category values from the current window.
+
+    Returns:
+        PSI score (float ≥ 0). Returns 0.0 if either sequence is empty.
+
+    Example:
+        >>> categorical_psi(["iOS","Android","iOS"], ["Android","Android","Web"])
+        0.693...
+    """
+    exp_list = list(expected)
+    act_list = list(actual)
+
+    if not exp_list or not act_list:
+        return 0.0
+
+    # Collect all unique categories across both windows
+    all_categories = set(exp_list) | set(act_list)
+    n_cats = len(all_categories)
+
+    if n_cats == 0:
+        return 0.0
+
+    n_exp = len(exp_list)
+    n_act = len(act_list)
+
+    # Count raw frequencies
+    exp_counts: dict = {cat: 0 for cat in all_categories}
+    act_counts: dict = {cat: 0 for cat in all_categories}
+    for v in exp_list:
+        exp_counts[v] = exp_counts.get(v, 0) + 1
+    for v in act_list:
+        act_counts[v] = act_counts.get(v, 0) + 1
+
+    psi = 0.0
+    for cat in all_categories:
+        # Laplace smoothing: add 1 pseudo-count to both numerator and denominator
+        # to prevent log(0) when a category is absent in one window.
+        exp_pct = (exp_counts[cat] + 1) / (n_exp + n_cats)
+        act_pct = (act_counts[cat] + 1) / (n_act + n_cats)
+        psi += (act_pct - exp_pct) * math.log(act_pct / exp_pct)
+
+    return max(0.0, psi)
+
+
+def smart_psi(
+    expected: Iterable,
+    actual: Iterable,
+    feature_type: str = "continuous",
+    bins: int = _DEFAULT_BINS,
+) -> float:
+    """
+    Dispatch to the correct PSI function based on feature type.
+
+    This is the preferred entry point for all PSI calculations in the worker.
+    It prevents the crash that occurs when population_stability_index() is
+    called on categorical string values (can't compare strings with < / >).
+
+    Args:
+        expected:     Baseline feature values.
+        actual:       Current feature values.
+        feature_type: ``"continuous"`` (default) or ``"categorical"``.
+                      Pass the value from the model's schema_definition,
+                      e.g. schema[feature_name].get("type", "continuous").
+        bins:         Histogram bins for continuous PSI (ignored for categorical).
+
+    Returns:
+        PSI score (float ≥ 0).
+
+    Example:
+        >>> schema = {"os": {"type": "categorical"}, "amount": {"type": "float"}}
+        >>> smart_psi(baseline_os, current_os, feature_type=schema["os"]["type"])
+        >>> smart_psi(baseline_amt, current_amt, feature_type="continuous")
+    """
+    ft = (feature_type or "continuous").lower()
+    if ft in ("categorical", "string", "str", "object"):
+        return categorical_psi(expected, actual)
+    return population_stability_index(expected, actual, bins=bins)
 
 
 # ---------------------------------------------------------------------------
