@@ -41,13 +41,25 @@ import json
 import logging
 import os
 import time
+import threading
+from dataclasses import dataclass, field
+from typing import Any, Dict, Optional, Set
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
-from typing import Any, Dict, Optional
+
+# Configure PyTorch CPU threads globally to prevent oversubscription
+import torch
+torch.set_num_threads(1)
+torch.set_num_interop_threads(1)
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
 from fastapi import FastAPI, Header, HTTPException, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from aiorwlock import RWLock
 
 try:
     import redis
@@ -61,6 +73,7 @@ from inference.churn_runtime import ChurnRuntime
 from inference.tenant_redis_client import TenantRedisClient
 from inference.tenant_model_registry import TenantModelRegistry
 from inference.storage_backend import get_storage_backend
+from inference.model_lru_cache import get_model_cache, AsyncLRUModelCache
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -81,8 +94,8 @@ SAFE_MODEL_DIR: str = os.path.realpath(os.getenv("SAFE_MODEL_DIR", MODELS_DIR))
 # Pub/Sub channel published by the Celery retraining worker (Fix 1)
 MODEL_UPDATES_CHANNEL: str = "mlops:model_updates"
 
-# Fix 3: thread pool for blocking PyTorch forward passes
-_CPU_WORKERS = min(4, (os.cpu_count() or 2))
+# Fix 3: thread pool for blocking PyTorch forward passes (CPU-bound worker count formula)
+_CPU_WORKERS = max(2, (os.cpu_count() or 4) // 2)
 _inference_executor: ThreadPoolExecutor = ThreadPoolExecutor(
     max_workers=_CPU_WORKERS, thread_name_prefix="inference"
 )
@@ -91,23 +104,64 @@ _inference_executor: ThreadPoolExecutor = ThreadPoolExecutor(
 # Global state
 # ---------------------------------------------------------------------------
 
-model_runtimes: Dict[str, Dict[str, Any]] = {}   # {tenant_id: {model_id: runtime}}
+@dataclass
+class SwapState:
+    """Thread-safe state for tracking active model swaps."""
+    _lock: threading.Lock = field(default_factory=threading.Lock)
+    _swapping_keys: Set[str] = field(default_factory=set)
+    _shutdown: bool = False
+
+    def begin_swap(self, tenant_id: str, model_id: str) -> None:
+        with self._lock:
+            self._swapping_keys.add(f"{tenant_id}/{model_id}")
+
+    def end_swap(self, tenant_id: str, model_id: str) -> None:
+        with self._lock:
+            self._swapping_keys.discard(f"{tenant_id}/{model_id}")
+
+    def is_swapping(self) -> bool:
+        with self._lock:
+            return bool(self._swapping_keys)
+
+    def set_shutdown(self) -> None:
+        with self._lock:
+            self._shutdown = True
+
+    def is_shutting_down(self) -> bool:
+        with self._lock:
+            return self._shutdown
+
+_swap_state = SwapState()
+
+# Load-then-swap RWLock for thread/asyncio concurrency safety
+_runtime_rwlock: RWLock = RWLock()
+
+# Bounded LRU cache initialization
+MODEL_CACHE_MAXSIZE = int(os.getenv("MODEL_CACHE_MAXSIZE", "10"))
+MODEL_CACHE_MIN_FREE_RAM_MB = int(os.getenv("MODEL_CACHE_MIN_FREE_RAM_MB", "512"))
+model_cache: AsyncLRUModelCache = get_model_cache(
+    maxsize=MODEL_CACHE_MAXSIZE,
+    min_free_ram_mb=MODEL_CACHE_MIN_FREE_RAM_MB
+)
+
 tenant_redis_clients: Dict[str, TenantRedisClient] = {}
 model_registry = TenantModelRegistry()
 storage_backend = get_storage_backend()
 
-# Fix 1: asyncio lock guarding model_runtimes mutations
-_runtime_lock: asyncio.Lock = asyncio.Lock()
-
 # Sync Redis for telemetry (shared global connection)
+if redis is None:
+    raise RuntimeError("Redis Python package is required but not installed.")
+
+if not REDIS_URL:
+    raise ValueError("REDIS_URL environment variable is required.")
+
 try:
-    if redis is not None:
-        redis_client = redis.from_url(REDIS_URL, decode_responses=True)
-    else:
-        redis_client = None
+    redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+    redis_client.ping()
+    logger.info("Connected to Redis at %s", REDIS_URL)
 except Exception as exc:
-    logger.error("Redis connection failed: %s", exc)
-    redis_client = None
+    logger.error("CRITICAL: Redis connection failed on startup: %s", exc)
+    raise RuntimeError(f"Failed to connect to Redis: {exc}")
 
 # Optional Postgres pool (Fix 2)
 _pg_pool = None
@@ -211,17 +265,10 @@ async def _model_reload_listener() -> None:
     Background coroutine: subscribe to mlops:model_updates and hot-swap
     stale runtimes when the retraining worker publishes new weights.
 
-    Eviction strategy (vs in-place replacement):
-      Evicting the old runtime from the dict is safer than replacing it
-      in-place. The next request triggers a fresh lazy load with the new
-      weights. This avoids any risk of serving predictions from a
-      partially-replaced model object.
-
-    S3 pre-warm (Fix 5 integration):
-      If STORAGE_BACKEND=s3, the storage backend's warm_cache() is called
-      immediately when the message arrives (in a thread pool), so the
-      download completes BEFORE any inference request needs the file.
-      The inference thread only performs a disk read, never an S3 download.
+    Load-then-swap pattern:
+      We load the new weights in the thread pool BEFORE evicting the old one.
+      Once successfully loaded, we acquire the writer lock, evict the old
+      model, and populate the cache with the new runtime.
     """
     if aioredis is None:
         logger.warning("redis.asyncio not available — model hot-swap disabled")
@@ -257,20 +304,48 @@ async def _model_reload_listener() -> None:
             tenant_id, model_id, new_key,
         )
 
-        # Pre-warm the local S3 cache in the thread pool (non-blocking)
-        if new_key:
-            loop = asyncio.get_event_loop()
-            loop.run_in_executor(
-                _inference_executor,
-                storage_backend.warm_cache,
-                new_key,
-            )
+        metadata = model_registry.get_latest_model(tenant_id, model_id)
+        if metadata:
+            _swap_state.begin_swap(tenant_id, model_id)
+            try:
+                # Pre-warm local file storage if S3 key is present
+                if new_key:
+                    loop = asyncio.get_event_loop()
+                    await loop.run_in_executor(
+                        _inference_executor,
+                        storage_backend.warm_cache,
+                        new_key,
+                    )
 
-        # Evict stale runtime — next request will reload fresh weights
-        async with _runtime_lock:
-            if tenant_id in model_runtimes:
-                model_runtimes[tenant_id].pop(model_id, None)
-                logger.info("Evicted stale runtime: tenant=%s model=%s", tenant_id, model_id)
+                # Phase 1: Load new weights in background (old model stays active)
+                loop = asyncio.get_event_loop()
+                new_runtime = await loop.run_in_executor(
+                    _inference_executor,
+                    _load_runtime_sync,
+                    tenant_id,
+                    model_id,
+                    metadata.config_path,
+                    metadata.framework,
+                    new_key or metadata.storage_path,
+                )
+
+                if new_runtime is not None:
+                    # Phase 2: Atomic pointer swap under RWLock writer lock
+                    async with _runtime_rwlock.writer_lock:
+                        await model_cache.evict(tenant_id, model_id)
+                        async def _loader():
+                            return new_runtime
+                        await model_cache.get_or_load(tenant_id, model_id, _loader)
+                        logger.info("Hot-swapped fresh runtime: tenant=%s model=%s", tenant_id, model_id)
+                else:
+                    logger.error("Failed to load fresh runtime for hot-swap — keeping old model active")
+            except Exception as exc:
+                logger.error("Error during hot-swap loading: %s", exc)
+            finally:
+                _swap_state.end_swap(tenant_id, model_id)
+        else:
+            # Fallback if metadata not registered: just evict
+            await model_cache.evict(tenant_id, model_id)
 
 
 # ---------------------------------------------------------------------------
@@ -285,6 +360,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        _swap_state.set_shutdown()
         reload_task.cancel()
         _inference_executor.shutdown(wait=False)
         if _pg_pool:
@@ -373,26 +449,27 @@ async def get_or_init_runtime(
     model_path: Optional[str],
 ) -> Optional[Any]:
     """
-    Return the cached runtime, or load it in the thread pool on first access.
-    Protected by _runtime_lock.
+    Return the cached runtime, or load it. Uses LRU cache with
+    thundering-herd prevention and soft eviction.
     """
-    async with _runtime_lock:
-        if tenant_id in model_runtimes and model_id in model_runtimes[tenant_id]:
-            return model_runtimes[tenant_id][model_id]
+    async def _loader():
+        loop = asyncio.get_event_loop()
+        runtime = await loop.run_in_executor(
+            _inference_executor,
+            _load_runtime_sync,
+            tenant_id, model_id, config_path, framework, model_path,
+        )
+        if runtime is None:
+            raise RuntimeError(f"Failed to load runtime for {tenant_id}/{model_id}")
+        return runtime
 
-    # Load outside the lock (can be slow if downloading from S3)
-    loop = asyncio.get_event_loop()
-    runtime = await loop.run_in_executor(
-        _inference_executor,
-        _load_runtime_sync,
-        tenant_id, model_id, config_path, framework, model_path,
-    )
-
-    if runtime is not None:
-        async with _runtime_lock:
-            model_runtimes.setdefault(tenant_id, {})[model_id] = runtime
-
-    return runtime
+    try:
+        # Acquire reader lock to allow concurrent reads during a hot-swap swap
+        async with _runtime_rwlock.reader_lock:
+            return await model_cache.get_or_load(tenant_id, model_id, _loader)
+    except Exception as exc:
+        logger.error("get_or_load failed for %s/%s: %s", tenant_id, model_id, exc)
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -404,9 +481,63 @@ def health():
     return {"status": "healthy", "service": "multi-tenant-inference"}
 
 
+@app.get("/healthz/live")
+def liveness_check():
+    """Liveness probe. Only fails if event loop is dead or shut down."""
+    if _swap_state.is_shutting_down():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Service is shutting down",
+        )
+    return {"status": "alive"}
+
+
 @app.get("/healthz/ready")
 def readiness_check():
-    return {"status": "ready"}
+    """Readiness probe. Returns 503 during slow model swaps or active shutdown."""
+    if _swap_state.is_shutting_down():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Service is shutting down",
+            headers={"Retry-After": "5"},
+        )
+    if _swap_state.is_swapping():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Model swap in progress",
+            headers={"Retry-After": "2"},
+        )
+    # If no models are loaded yet, signal unready so we don't receive traffic
+    if model_cache.size == 0:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="No model runtimes loaded",
+            headers={"Retry-After": "5"},
+        )
+        
+    # Verify Redis connectivity for real-time pub/sub hot-swaps and telemetry
+    try:
+        redis_client.ping()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Redis connection failed: {exc}",
+            headers={"Retry-After": "5"},
+        )
+        
+    return {"status": "ready", "loaded_keys": model_cache.keys()}
+
+
+@app.get("/healthz/startup")
+def startup_check():
+    """Startup probe. Passes once HTTP server is running."""
+    return {"status": "started"}
+
+
+@app.get("/cache/stats")
+def cache_stats():
+    """Admin endpoint to inspect cache metadata."""
+    return model_cache.stats()
 
 
 @app.post("/register-tenant", status_code=status.HTTP_201_CREATED)
@@ -507,10 +638,8 @@ async def predict(  # Fix 3: async to allow run_in_executor
 
     # Resolve runtime (lazy-load + S3 cache warm if needed)
     metadata = model_registry.get_latest_model(x_tenant_id, x_model_id)
-    if not metadata and (
-        x_tenant_id not in model_runtimes
-        or x_model_id not in model_runtimes.get(x_tenant_id, {})
-    ):
+    cached_entry = model_cache.peek(x_tenant_id, x_model_id)
+    if not metadata and cached_entry is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Model {x_model_id} not found for tenant {x_tenant_id}",
@@ -525,8 +654,7 @@ async def predict(  # Fix 3: async to allow run_in_executor
             metadata.storage_path,
         )
     else:
-        async with _runtime_lock:
-            runtime = model_runtimes.get(x_tenant_id, {}).get(x_model_id)
+        runtime = cached_entry.runtime if cached_entry else None
 
     if not runtime:
         raise HTTPException(

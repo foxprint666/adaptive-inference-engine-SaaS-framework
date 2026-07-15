@@ -717,7 +717,7 @@ def phase5_hot_swap() -> Dict:
     old_ptr = id(old_runtime)
 
     # Capture old model outputs on test vector
-    test_vec = {"amount": 9500.0, "distance": 800.0, "velocity": 95.0, "age": 15.0, "risk_score": 0.95}
+    test_vec = {"amount": 1500.0, "distance": 400.0, "velocity": 45.0, "age": 200.0, "risk_score": 0.65}
     old_pred = old_runtime.predict(test_vec)
 
     t_load = time.perf_counter()
