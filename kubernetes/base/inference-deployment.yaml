@@ -5,6 +5,11 @@ metadata:
   namespace: adaptive-inference
 spec:
   replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app: inference
@@ -13,6 +18,7 @@ spec:
       labels:
         app: inference
     spec:
+      terminationGracePeriodSeconds: 60
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -25,12 +31,34 @@ spec:
           envFrom:
             - configMapRef:
                 name: adaptive-inference-config
+          startupProbe:
+            httpGet:
+              path: /healthz/startup
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 12
           readinessProbe:
             httpGet:
               path: /healthz/ready
               port: 8080
-            initialDelaySeconds: 10
-            periodSeconds: 10
+            initialDelaySeconds: 0
+            periodSeconds: 5
+            failureThreshold: 2
+            successThreshold: 1
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz/live
+              port: 8080
+            initialDelaySeconds: 0
+            periodSeconds: 15
+            failureThreshold: 4
+            timeoutSeconds: 5
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 10"]
           resources:
             requests:
               cpu: 250m

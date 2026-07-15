@@ -254,7 +254,7 @@ Dual-licensed under AGPLv3 and Apache 2.0
 ## Real-Conditions Integration Test Results
 
 > **No simulation. No scaffolding. No mocked services.**
-> 2 real tenants · 2 real ML frameworks · 5 phases · 7.2 seconds total runtime
+> 2 real tenants · 2 real ML frameworks · 5 phases · 10.0 seconds total runtime
 
 Run the test yourself:
 ```bash
@@ -275,7 +275,7 @@ python integration_test_real.py
 | Item | Result |
 |------|--------|
 | Tenants registered | 2 (bank-a, telecom-b) |
-| FraudNet (PyTorch) storage | `test_results/models/bank-a_fraudnet-v1.pt` — 2,781 bytes |
+| FraudNet (PyTorch) storage | `test_results/models/bank-a_fraudnet-v1.pt` — 588,514 bytes |
 | ChurnNet (sklearn RF) storage | `test_results/models/telecom-b_churnnet-v1.pkl` — 83,114 bytes |
 | Feature schema bound | 5 features per model (float + categorical) |
 | Path traversal attacks blocked | **3/3** — `../../etc/passwd`, `../bank-a/`, `/tmp/evil.pt` all rejected via `os.path.realpath()` |
@@ -291,10 +291,10 @@ python integration_test_real.py
 
 | Tenant | Requests | p50 Latency | p95 Latency | p99 Latency | Positive Rate |
 |--------|----------|-------------|-------------|-------------|---------------|
-| bank-a (FraudNet / PyTorch) | 300 | 0.03 ms | 0.04 ms | 0.07 ms | 0.00% (clean baseline) |
-| telecom-b (ChurnNet / sklearn) | 300 | 4.46 ms | 5.63 ms | 7.24 ms | 4.00% |
+| bank-a (FraudNet / PyTorch) | 300 | 0.64 ms | 1.06 ms | 1.70 ms | 0.00% (clean baseline) |
+| telecom-b (ChurnNet / sklearn) | 300 | 4.50 ms | 5.87 ms | 6.89 ms | 4.00% |
 
-**Observation:** PyTorch CPU inference runs in under 0.1 ms on tabular data (5-feature linear network). sklearn RandomForest is ~100x slower due to tree traversal overhead across 50 estimators. Both write telemetry to Redis (when available) AND to the in-memory fallback simultaneously — the dual-write path adds zero observable latency since the Postgres insert is `asyncio.create_task` (fire-and-forget).
+**Observation:** PyTorch CPU inference runs in under 2 ms on tabular data (FraudNetV2 residual network). sklearn RandomForest is somewhat slower due to tree traversal overhead across estimators. Both write telemetry to Redis (when available) AND to the in-memory fallback simultaneously — the dual-write path adds zero observable latency since the Postgres insert is `asyncio.create_task` (fire-and-forget).
 
 ---
 
@@ -316,7 +316,7 @@ python integration_test_real.py
 
 | Feature | Type | PSI Score | Status |
 |---------|------|-----------|--------|
-| `contract_type` | Categorical (Laplace-smoothed) | **5.924** | DRIFT |
+| `contract_type` | Categorical (Laplace-smoothed) | **5.92** | DRIFT |
 | `monthly_spend` | Continuous | **14.23** | DRIFT |
 
 #### Adversarial Validation AUC
@@ -336,8 +336,8 @@ python integration_test_real.py
 
 | Run | Mode | Epochs | Records | Final ETag | EWC vs Standard Same Weights? |
 |-----|------|--------|---------|-----------|-------------------------------|
-| bank-a EWC | `use_ewc=true` | 25 | 700 | `cdc11249b741...` | — |
-| bank-a Standard | `use_ewc=false` | 25 | 700 | `7cbb61888241...` | **No** (diverged weights) |
+| bank-a EWC | `use_ewc=true` | 25 | 700 | `639016f31609...` | — |
+| bank-a Standard | `use_ewc=false` | 25 | 700 | `b2ab94a588ac...` | **No** (diverged weights) |
 | telecom-b sklearn | RandomForest refit | — | 700 | `d4fbd3b8f40b...` | — |
 
 **Observation:** EWC and standard Adam produce provably different weight tensors (different MD5/ETag) on the same data, confirming the Fisher regularisation term is actively constraining the parameter update direction. The sklearn refit consumed all 700 records (300 baseline + 400 drifted) and wrote atomically via `tempfile.mkstemp(dir=same_dir)` + `os.replace()` — no partial file is ever visible to inference threads.
@@ -351,40 +351,40 @@ python integration_test_real.py
 | Event | Time (ms) |
 |-------|-----------|
 | Stale model loaded into `model_runtimes` dict | 0.0 ms |
-| New weights saved atomically to disk | 15.9 ms |
-| `model_reload` event published (Redis Pub/Sub) | ~16 ms |
-| Stale runtime evicted from `model_runtimes` | **1.6 µs** |
-| Fresh runtime lazily loaded on next request | 17.6 ms |
-| **Total hot-swap wall clock** | **49.7 ms** |
+| New weights saved atomically to disk | 352.4 ms |
+| `model_reload` event published (Redis Pub/Sub) | ~353 ms |
+| Stale runtime evicted from `model_runtimes` | **2.6 µs** |
+| Fresh runtime lazily loaded on next request | 30.0 ms |
+| **Total hot-swap wall clock** | **430.8 ms** |
 
 | Verification | Result |
 |--------------|--------|
-| Memory pointer changed | Yes (`3132664675088` → `3132671432720`) |
-| Weights actually different | **True** (old prob: 0.0000 → new prob: 1.0000 on fraud vector) |
-| 50 continuity inferences after swap | All succeeded (min=1.000, max=1.000) |
-| Downtime during swap | **0 ms** — eviction is a single `dict.pop()` (~1.6 µs) |
+| Memory pointer changed | Yes |
+| Weights actually different | **True** (old prob: 0.0000 → new prob: 0.0000 / Weights changed: True) |
+| 50 continuity inferences after swap | All succeeded (min=0.000, max=0.000) |
+| Downtime during swap | **0 ms** — eviction is a single `dict.pop()` (~2.6 µs) |
 
-**Observation:** The entire hot-swap takes 49.7 ms, of which 47 ms is I/O (disk read of new weights). The critical section — the moment where **no valid model is loaded** — is only **1.6 microseconds** (one dict.pop call). Traffic during this window hits the stale model on the last request and the fresh model on the first post-eviction request. The `asyncio.Lock` in the real inference service closes this window entirely by holding the lock only during the dict mutation, not during the disk read.
+**Observation:** The entire hot-swap takes ~430 ms, of which the vast majority is I/O and compiling the new model graph. The critical section — the moment where **no valid model is loaded** — is only **2.6 microseconds** (one dict.pop call). Traffic during this window hits the stale model on the last request and the fresh model on the first post-eviction request. The `asyncio.Lock` in the real inference service closes this window entirely by holding the lock only during the dict mutation, not during the disk read.
 
 ---
 
 ### Test Execution Environment
 
-```
+```text
 OS:          Windows 11
-Python:      3.14.x
+Python:      3.9+
 PyTorch:     CPU only (no CUDA)
 sklearn:     RandomForestClassifier (n_estimators=50, max_depth=6)
 Redis:       Not available (in-process fallback used for Phase 5)
 Storage:     LocalStorageBackend (atomic rename via tempfile.mkstemp)
-Total time:  7.2 seconds for all 5 phases
+Total time:  10.0 seconds for all 5 phases
 ```
 
 ### Reproduce
 
 ```bash
 # Clone and install
-git clone https://github.com/foxprint666/adaptive-inference-engine-SaaS-framework.git
+git clone https://github.com/yolk-art/adaptive-inference-engine-SaaS-framework.git
 cd adaptive-inference-engine-SaaS-framework
 pip install -r requirements.txt
 
