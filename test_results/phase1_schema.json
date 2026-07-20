@@ -1,0 +1,58 @@
+{
+  "phase": 1,
+  "timestamp": "2026-07-15T10:13:42.126186+00:00",
+  "tenants": {
+    "bank-a": {
+      "model_id": "fraudnet-v1",
+      "framework": "pytorch",
+      "storage_path": "test_results\\models\\bank-a_fraudnet-v1.pt",
+      "storage_size_bytes": 588514,
+      "schema_features": [
+        "amount",
+        "distance",
+        "velocity",
+        "age",
+        "risk_score"
+      ],
+      "drift_thresholds": {
+        "psi_threshold": 0.25,
+        "auc_threshold": 0.72
+      },
+      "feature_types": {
+        "amount": "float",
+        "distance": "float",
+        "velocity": "float",
+        "age": "float",
+        "risk_score": "float"
+      },
+      "jwt_issued": true
+    },
+    "telecom-b": {
+      "model_id": "churnnet-v1",
+      "framework": "sklearn",
+      "storage_path": "test_results\\models\\telecom-b_churnnet-v1.pkl",
+      "storage_size_bytes": 83114,
+      "schema_features": [
+        "customer_age",
+        "tenure_months",
+        "monthly_spend",
+        "support_tickets",
+        "contract_type"
+      ],
+      "drift_thresholds": {
+        "psi_threshold": 0.2,
+        "auc_threshold": 0.68
+      },
+      "feature_types": {
+        "customer_age": "int",
+        "tenure_months": "int",
+        "monthly_spend": "float",
+        "support_tickets": "int",
+        "contract_type": "categorical"
+      },
+      "jwt_issued": true
+    }
+  },
+  "path_traversal_blocked": 3,
+  "status": "PASS"
+}

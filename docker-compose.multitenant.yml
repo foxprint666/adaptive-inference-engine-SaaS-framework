@@ -3,6 +3,11 @@ services:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   postgres:
     image: postgres:16-alpine
@@ -15,6 +20,14 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./database/tenant_model_registry.sql:/docker-entrypoint-initdb.d/001-registry.sql:ro
+      - ./database/telemetry.sql:/docker-entrypoint-initdb.d/002-telemetry.sql:ro
+      - ./database/drift_metrics.sql:/docker-entrypoint-initdb.d/003-drift-metrics.sql:ro
+      - ./database/users.sql:/docker-entrypoint-initdb.d/004-users.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mlops"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   inference:
     build:
@@ -24,26 +37,34 @@ services:
       REDIS_URL: redis://redis:6379/0
       DATABASE_URL: postgresql+psycopg2://mlops:mlops@postgres:5432/mlops
       DEVICE: cpu
+      SAFE_MODEL_DIR: /app/models
     ports:
       - "8080:8080"
     depends_on:
-      - redis
-      - postgres
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
 
   admin-api:
     build:
       context: .
       dockerfile: admin_api/Dockerfile
     environment:
-      SECRET_KEY: local-dev-secret
+      SECRET_KEY: local-dev-secret-change-in-production
       DATABASE_URL: postgresql+psycopg2://mlops:mlops@postgres:5432/mlops
+      REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
+      CORS_ORIGINS: http://localhost:3000,http://dashboard:3000
+      ADMIN_PASSWORD: admin123
     ports:
       - "8003:8003"
-
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   worker:
     build:
@@ -51,13 +72,29 @@ services:
       dockerfile: worker/Dockerfile.worker
     environment:
       REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql+psycopg2://mlops:mlops@postgres:5432/mlops
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
       TENANT_ID: client-a
       MODEL_ID: fraudnet-v1
     depends_on:
-      - redis
-      - postgres
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    environment:
+      NEXT_PUBLIC_ADMIN_URL: http://localhost:8003
+      NEXT_PUBLIC_INFERENCE_URL: http://localhost:8080
+    ports:
+      - "3000:3000"
+    depends_on:
+      - admin-api
+      - inference
 
 volumes:
   postgres-data:

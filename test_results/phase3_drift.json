@@ -1,0 +1,26 @@
+{
+  "phase": 3,
+  "timestamp": "2026-07-15T10:13:45.884960+00:00",
+  "bank_a": {
+    "psi_per_feature": {
+      "amount": 35.1705,
+      "distance": 22.4839,
+      "velocity": 29.7768,
+      "age": 20.1431,
+      "risk_score": 34.4921
+    },
+    "adversarial_auc": 1.0,
+    "psi_threshold": 0.25,
+    "auc_threshold": 0.72,
+    "drift_detected": true
+  },
+  "telecom_b": {
+    "categorical_psi_contract_type": 5.924,
+    "continuous_psi_monthly_spend": 14.2298,
+    "adversarial_auc": 0.9999,
+    "psi_threshold": 0.2,
+    "auc_threshold": 0.68,
+    "drift_detected": true
+  },
+  "status": "PASS"
+}

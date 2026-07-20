@@ -1,0 +1,62 @@
+{
+  "phase": 5,
+  "timestamp": "2026-07-15T10:13:50.601916+00:00",
+  "redis_pubsub_used": false,
+  "test_vector": {
+    "amount": 1500.0,
+    "distance": 400.0,
+    "velocity": 45.0,
+    "age": 200.0,
+    "risk_score": 0.65
+  },
+  "old_model": {
+    "ptr": 1816453075088,
+    "probability": 0.0
+  },
+  "new_model": {
+    "ptr": 1816454161392,
+    "probability": 0.0
+  },
+  "weights_changed": true,
+  "ptr_changed": true,
+  "evict_duration_us": 2.0,
+  "reload_duration_ms": 22.77,
+  "total_hotswap_ms": 319.35,
+  "pubsub_receivers": 0,
+  "continuity_inferences": 50,
+  "timeline": [
+    {
+      "event": "old_model_loaded",
+      "t_ms": 0.0,
+      "prediction": 0,
+      "probability": 0.0
+    },
+    {
+      "event": "new_weights_saved",
+      "t_ms": 259.62
+    },
+    {
+      "event": "reload_event_published",
+      "t_ms": 259.65,
+      "pubsub_receivers": 0
+    },
+    {
+      "event": "stale_runtime_evicted",
+      "t_ms": 259.65,
+      "evict_duration_us": 2.0
+    },
+    {
+      "event": "new_runtime_loaded",
+      "t_ms": 282.43,
+      "reload_duration_ms": 22.77
+    },
+    {
+      "event": "zero_downtime_verified",
+      "t_ms": 319.35,
+      "old_prob": 0.0,
+      "new_prob": 0.0,
+      "weights_changed": true
+    }
+  ],
+  "status": "PASS"
+}

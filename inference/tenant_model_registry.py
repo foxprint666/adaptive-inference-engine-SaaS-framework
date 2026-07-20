@@ -103,6 +103,14 @@ class TenantModelRegistry:
     def list_tenant_models(self, tenant_id: str) -> Dict[str, ModelMetadata]:
         return self.backend.list_tenant_models(tenant_id)
 
+    def list_all_tenants(self) -> Dict[str, TenantMetadata]:
+        """Admin-level: return all registered tenants."""
+        return self.backend.list_all_tenants()
+
+    def list_all_models(self) -> list:
+        """Admin-level: return all models across all tenants."""
+        return self.backend.list_all_models()
+
     def count_models(self) -> int:
         return self.backend.count_models()
 
@@ -192,6 +200,12 @@ class InMemoryTenantModelRegistry:
             if tid == tenant_id:
                 result[mid] = metadata
         return result
+
+    def list_all_tenants(self) -> Dict[str, TenantMetadata]:
+        return dict(self.tenants)
+
+    def list_all_models(self) -> list:
+        return list(self.registry.values())
 
     def count_models(self) -> int:
         return len(self.registry)
@@ -402,6 +416,21 @@ class PostgresTenantModelRegistry:
         with self.engine.connect() as connection:
             rows = connection.execute(query).mappings().all()
         return {row["model_id"]: _model_from_row(row) for row in rows}
+
+    def list_all_tenants(self) -> Dict:
+        query = self.select(self.tenants).order_by(self.tenants.c.created_at.desc())
+        with self.engine.connect() as connection:
+            rows = connection.execute(query).mappings().all()
+        return {row["tenant_id"]: _tenant_from_row(row) for row in rows}
+
+    def list_all_models(self) -> list:
+        query = self.select(self.tenant_models).order_by(
+            self.tenant_models.c.tenant_id,
+            self.tenant_models.c.created_at.desc(),
+        )
+        with self.engine.connect() as connection:
+            rows = connection.execute(query).mappings().all()
+        return [_model_from_row(row) for row in rows]
 
     def count_models(self) -> int:
         from sqlalchemy import func, select
