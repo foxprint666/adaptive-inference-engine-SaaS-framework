@@ -1,0 +1,29 @@
+{
+  "phase": 4,
+  "timestamp": "2026-07-15T10:13:48.993845+00:00",
+  "bank_a_ewc": {
+    "use_ewc": true,
+    "epochs": 25,
+    "initial_loss": 0.0229,
+    "final_loss": 0.0048,
+    "loss_reduction_pct": 79.1,
+    "model_size_bytes": 588514,
+    "etag": "19dc58b89c4eab60f183e927d3948e1c"
+  },
+  "bank_a_standard": {
+    "use_ewc": false,
+    "epochs": 25,
+    "initial_loss": 0.0001,
+    "final_loss": 0.0,
+    "loss_reduction_pct": 100.0,
+    "model_size_bytes": 588514,
+    "etag": "f3ff6af2d14841fdb5cd42f9c447d12e"
+  },
+  "telecom_b_sklearn": {
+    "records_used": 700,
+    "model_size_bytes": 71921,
+    "etag": "d4fbd3b8f40b09dca5eca0a493adc4d6"
+  },
+  "ewc_vs_standard_different_weights": true,
+  "status": "PASS"
+}

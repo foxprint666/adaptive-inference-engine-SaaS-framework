@@ -1,0 +1,35 @@
+{
+  "phase": 2,
+  "timestamp": "2026-07-15T10:13:43.473020+00:00",
+  "n_requests": 600,
+  "bank_a": {
+    "requests": 300,
+    "latency_ms": {
+      "mean": 0.696,
+      "min": 0.488,
+      "max": 2.563,
+      "p50": 0.644,
+      "p95": 1.08,
+      "p99": 1.614
+    },
+    "fraud_rate": 0.0,
+    "redis_queue_depth": 0,
+    "redis_persisted": false
+  },
+  "telecom_b": {
+    "requests": 300,
+    "latency_ms": {
+      "mean": 4.827,
+      "min": 4.066,
+      "max": 12.958,
+      "p50": 4.473,
+      "p95": 7.0,
+      "p99": 9.639
+    },
+    "churn_rate": 0.04,
+    "redis_queue_depth": 0,
+    "redis_persisted": false
+  },
+  "dual_write_active": true,
+  "status": "PASS"
+}

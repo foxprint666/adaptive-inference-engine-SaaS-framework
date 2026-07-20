@@ -39,6 +39,7 @@ from worker.metrics import (
     record_queue_depth,
     drift_check_timer,
 )
+from worker.drift_history import record_drift_metrics as _persist_drift_row
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +114,7 @@ def run_drift_check_for_tenant(
 
     try:
         with drift_check_timer(tenant_id, model_id):
+            cycle_start = time.time()
             _execute_drift_check(
                 summary,
                 tenant_id=tenant_id,
@@ -121,11 +123,26 @@ def run_drift_check_for_tenant(
                 window_size=window_size,
                 enqueue_retraining=enqueue_retraining,
             )
+            summary["check_duration_ms"] = (time.time() - cycle_start) * 1000
     except Exception as exc:
         logger.error(
             "Drift check failed for %s/%s: %s", tenant_id, model_id, exc, exc_info=True
         )
         summary["error"] = str(exc)
+    finally:
+        # Always persist to Postgres (silently no-ops if DATABASE_URL unset)
+        _persist_drift_row(
+            tenant_id=tenant_id,
+            model_id=model_id,
+            psi=summary.get("psi", 0.0),
+            adversarial_auc=summary.get("adversarial_auc", 0.5),
+            records_checked=summary.get("records", 0),
+            drift_detected=summary.get("drift_detected", False),
+            retraining_triggered=summary.get("retraining_enqueued", False),
+            drift_reasons=summary.get("drift_reasons", []),
+            psi_per_feature=summary.get("psi_per_feature"),
+            check_duration_ms=summary.get("check_duration_ms"),
+        )
 
     return summary
 
