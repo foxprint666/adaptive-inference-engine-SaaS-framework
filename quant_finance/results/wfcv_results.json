@@ -1,0 +1,65 @@
+{
+  "model_type": "momentum",
+  "psi_threshold": 0.25,
+  "auc_threshold": 0.72,
+  "folds": [
+    {
+      "fold_id": 1,
+      "label": "quiet->stress",
+      "n_train": 979,
+      "n_test": 499,
+      "directional_accuracy": 0.0,
+      "sharpe_ratio": 0.0,
+      "max_drawdown_pct": 0.0,
+      "fold_return_pct": 0.0,
+      "psi": 6.2516,
+      "adversarial_auc": 0.6485,
+      "drift_triggered": true,
+      "n_long": 0,
+      "n_short": 0,
+      "n_flat": 499,
+      "final_equity": 10000.0
+    },
+    {
+      "fold_id": 2,
+      "label": "stress->crash",
+      "n_train": 1479,
+      "n_test": 299,
+      "directional_accuracy": 0.4896,
+      "sharpe_ratio": 0.71,
+      "max_drawdown_pct": 1.4,
+      "fold_return_pct": -0.11,
+      "psi": 13.3141,
+      "adversarial_auc": 0.9906,
+      "drift_triggered": true,
+      "n_long": 12,
+      "n_short": 229,
+      "n_flat": 58,
+      "final_equity": 9989.18
+    },
+    {
+      "fold_id": 3,
+      "label": "crash->recovery",
+      "n_train": 1779,
+      "n_test": 699,
+      "directional_accuracy": 0.3243,
+      "sharpe_ratio": -0.155,
+      "max_drawdown_pct": 0.2,
+      "fold_return_pct": -0.18,
+      "psi": 4.1655,
+      "adversarial_auc": 0.6699,
+      "drift_triggered": true,
+      "n_long": 27,
+      "n_short": 47,
+      "n_flat": 625,
+      "final_equity": 9981.79
+    }
+  ],
+  "summary": {
+    "mean_sharpe": 0.185,
+    "mean_accuracy": 0.2713,
+    "mean_max_dd_pct": 0.53,
+    "folds_with_drift": 3,
+    "total_folds": 3
+  }
+}

@@ -1,0 +1,677 @@
+{
+  "version": "v3_zero_loose_ends",
+  "fixes_applied": [
+    "FIX-1: PSI reference = first-window empirical distribution",
+    "FIX-2: ActiveModelCalibrator routes to active model after swap",
+    "FIX-3: Platt L2 regularization + a_max=10 clamp",
+    "FIX-4: Candidate EWC lambda=0.3, trained on crash+recovery only",
+    "FIX-5: WFCV uses calibrated probs + vol-executor per fold",
+    "FIX-6: WFCV PSI reference = training-window distribution"
+  ],
+  "simulation": {
+    "total_ticks": 2500,
+    "processed_ticks": 2480,
+    "simulation_elapsed_s": 0.166,
+    "starting_equity": 10000.0,
+    "final_equity": 10027.5,
+    "total_return_pct": 0.27,
+    "realised_pnl": 0.0,
+    "max_drawdown_pct": 1.29,
+    "total_tx_costs": 1.0,
+    "total_slippage_cost": 0.0,
+    "n_drift_checks": 23,
+    "n_hot_swaps": 21,
+    "swap_log": [
+      {
+        "tick": 200,
+        "from": "baseline",
+        "to": "candidate",
+        "psi_at_swap": 0.0,
+        "auc_at_swap": 0.8109,
+        "vol_at_swap": 0.1821,
+        "cooldown_used": 52
+      },
+      {
+        "tick": 300,
+        "from": "candidate",
+        "to": "candidate",
+        "psi_at_swap": 0.0,
+        "auc_at_swap": 0.8751,
+        "vol_at_swap": 0.1897,
+        "cooldown_used": 50
+      },
+      {
+        "tick": 400,
+        "from": "candidate",
+        "to": "candidate",
+        "psi_at_swap": 0.0,
+        "auc_at_swap": 0.7349,
+        "vol_at_swap": 0.1873,
+        "cooldown_used": 50
+      },
+      {
+        "tick": 500,
+        "from": "candidate",
+        "to": "candidate",
+        "psi_at_swap": 0.0,
+        "auc_at_swap": 0.7279,
+        "vol_at_swap": 0.1652,
+        "cooldown_used": 57
+      },
+      {
+        "tick": 600,
+        "from": "candidate",
+        "to": "baseline",
+        "psi_at_swap": 0.0,
+        "auc_at_swap": 0.7093,
+        "vol_at_swap": 0.1882,
+        "cooldown_used": 50
+      },
+      {
+        "tick": 800,
+        "from": "baseline",
+        "to": "candidate",
+        "psi_at_swap": 1.0238,
+        "auc_at_swap": 0.6026,
+        "vol_at_swap": 0.2345,
+        "cooldown_used": 40
+      },
+      {
+        "tick": 900,
+        "from": "candidate",
+        "to": "baseline",
+        "psi_at_swap": 0.0,
+        "auc_at_swap": 0.6226,
+        "vol_at_swap": 0.1959,
+        "cooldown_used": 48
+      },
+      {
+        "tick": 1100,
+        "from": "baseline",
+        "to": "candidate",
+        "psi_at_swap": 0.9616,
+        "auc_at_swap": 0.7349,
+        "vol_at_swap": 0.4951,
+        "cooldown_used": 19
+      },
+      {
+        "tick": 1200,
+        "from": "candidate",
+        "to": "candidate",
+        "psi_at_swap": 0.0,
+        "auc_at_swap": 0.7461,
+        "vol_at_swap": 0.6522,
+        "cooldown_used": 14
+      },
+      {
+        "tick": 1300,
+        "from": "candidate",
+        "to": "candidate",
+        "psi_at_swap": 0.0,
+        "auc_at_swap": 0.8207,
+        "vol_at_swap": 0.3256,
+        "cooldown_used": 29
+      },
+      {
+        "tick": 1400,
+        "from": "candidate",
+        "to": "candidate",
+        "psi_at_swap": 0.0,
+        "auc_at_swap": 0.8619,
+        "vol_at_swap": 0.5276,
+        "cooldown_used": 18
+      },
+      {
+        "tick": 1500,
+        "from": "candidate",
+        "to": "candidate",
+        "psi_at_swap": 0.0,
+        "auc_at_swap": 0.8694,
+        "vol_at_swap": 0.8815,
+        "cooldown_used": 10
+      },
+      {
+        "tick": 1600,
+        "from": "candidate",
+        "to": "candidate",
+        "psi_at_swap": 0.0,
+        "auc_at_swap": 0.8722,
+        "vol_at_swap": 11.5979,
+        "cooldown_used": 5
+      },
+      {
+        "tick": 1700,
+        "from": "candidate",
+        "to": "candidate",
+        "psi_at_swap": 0.0,
+        "auc_at_swap": 0.8802,
+        "vol_at_swap": 42.6103,
+        "cooldown_used": 5
+      },
+      {
+        "tick": 1800,
+        "from": "candidate",
+        "to": "candidate",
+        "psi_at_swap": 0.0,
+        "auc_at_swap": 0.9152,
+        "vol_at_swap": 0.6088,
+        "cooldown_used": 15
+      },
+      {
+        "tick": 1900,
+        "from": "candidate",
+        "to": "candidate",
+        "psi_at_swap": 0.0,
+        "auc_at_swap": 0.9532,
+        "vol_at_swap": 0.7839,
+        "cooldown_used": 12
+      },
+      {
+        "tick": 2000,
+        "from": "candidate",
+        "to": "candidate",
+        "psi_at_swap": 0.0,
+        "auc_at_swap": 0.968,
+        "vol_at_swap": 0.5985,
+        "cooldown_used": 15
+      },
+      {
+        "tick": 2100,
+        "from": "candidate",
+        "to": "candidate",
+        "psi_at_swap": 0.0,
+        "auc_at_swap": 0.98,
+        "vol_at_swap": 0.7606,
+        "cooldown_used": 12
+      },
+      {
+        "tick": 2200,
+        "from": "candidate",
+        "to": "candidate",
+        "psi_at_swap": 0.0,
+        "auc_at_swap": 0.9784,
+        "vol_at_swap": 0.722,
+        "cooldown_used": 13
+      },
+      {
+        "tick": 2300,
+        "from": "candidate",
+        "to": "candidate",
+        "psi_at_swap": 0.0,
+        "auc_at_swap": 0.9556,
+        "vol_at_swap": 0.6289,
+        "cooldown_used": 15
+      },
+      {
+        "tick": 2400,
+        "from": "candidate",
+        "to": "candidate",
+        "psi_at_swap": 0.0,
+        "auc_at_swap": 0.9373,
+        "vol_at_swap": 0.517,
+        "cooldown_used": 18
+      }
+    ],
+    "drift_checks": [
+      {
+        "tick": 200,
+        "psi": 0.0,
+        "auc": 0.8109,
+        "drift_detected": true,
+        "active_version": "baseline",
+        "regime": "quiet",
+        "equity": 9999.26,
+        "current_vol": 0.1821,
+        "cooldown": 52,
+        "swap_executed": true
+      },
+      {
+        "tick": 300,
+        "psi": 0.0,
+        "auc": 0.8751,
+        "drift_detected": true,
+        "active_version": "candidate",
+        "regime": "quiet",
+        "equity": 9999.46,
+        "current_vol": 0.1897,
+        "cooldown": 50,
+        "swap_executed": true
+      },
+      {
+        "tick": 400,
+        "psi": 0.0,
+        "auc": 0.7349,
+        "drift_detected": true,
+        "active_version": "candidate",
+        "regime": "quiet",
+        "equity": 9999.16,
+        "current_vol": 0.1873,
+        "cooldown": 50,
+        "swap_executed": true
+      },
+      {
+        "tick": 500,
+        "psi": 0.0,
+        "auc": 0.7279,
+        "drift_detected": true,
+        "active_version": "candidate",
+        "regime": "quiet",
+        "equity": 9998.9,
+        "current_vol": 0.1652,
+        "cooldown": 57,
+        "swap_executed": true
+      },
+      {
+        "tick": 600,
+        "psi": 0.0,
+        "auc": 0.7093,
+        "drift_detected": false,
+        "active_version": "candidate",
+        "regime": "quiet",
+        "equity": 9999.26,
+        "current_vol": 0.1882,
+        "cooldown": 50,
+        "swap_executed": true
+      },
+      {
+        "tick": 700,
+        "psi": 0.0,
+        "auc": 0.6606,
+        "drift_detected": false,
+        "active_version": "baseline",
+        "regime": "quiet",
+        "equity": 9999.26,
+        "current_vol": 0.2387,
+        "cooldown": 39,
+        "swap_executed": false
+      },
+      {
+        "tick": 800,
+        "psi": 1.0238,
+        "auc": 0.6026,
+        "drift_detected": true,
+        "active_version": "baseline",
+        "regime": "quiet",
+        "equity": 9999.54,
+        "current_vol": 0.2345,
+        "cooldown": 40,
+        "swap_executed": true
+      },
+      {
+        "tick": 900,
+        "psi": 0.0,
+        "auc": 0.6226,
+        "drift_detected": false,
+        "active_version": "candidate",
+        "regime": "quiet",
+        "equity": 9999.94,
+        "current_vol": 0.1959,
+        "cooldown": 48,
+        "swap_executed": true
+      },
+      {
+        "tick": 1000,
+        "psi": 0.0,
+        "auc": 0.6943,
+        "drift_detected": false,
+        "active_version": "baseline",
+        "regime": "stress",
+        "equity": 9999.92,
+        "current_vol": 0.3794,
+        "cooldown": 25,
+        "swap_executed": false
+      },
+      {
+        "tick": 1100,
+        "psi": 0.9616,
+        "auc": 0.7349,
+        "drift_detected": true,
+        "active_version": "baseline",
+        "regime": "stress",
+        "equity": 9999.84,
+        "current_vol": 0.4951,
+        "cooldown": 19,
+        "swap_executed": true
+      },
+      {
+        "tick": 1200,
+        "psi": 0.0,
+        "auc": 0.7461,
+        "drift_detected": true,
+        "active_version": "candidate",
+        "regime": "stress",
+        "equity": 10002.04,
+        "current_vol": 0.6522,
+        "cooldown": 14,
+        "swap_executed": true
+      },
+      {
+        "tick": 1300,
+        "psi": 0.0,
+        "auc": 0.8207,
+        "drift_detected": true,
+        "active_version": "candidate",
+        "regime": "stress",
+        "equity": 10002.56,
+        "current_vol": 0.3256,
+        "cooldown": 29,
+        "swap_executed": true
+      },
+      {
+        "tick": 1400,
+        "psi": 0.0,
+        "auc": 0.8619,
+        "drift_detected": true,
+        "active_version": "candidate",
+        "regime": "stress",
+        "equity": 10006.14,
+        "current_vol": 0.5276,
+        "cooldown": 18,
+        "swap_executed": true
+      },
+      {
+        "tick": 1500,
+        "psi": 0.0,
+        "auc": 0.8694,
+        "drift_detected": true,
+        "active_version": "candidate",
+        "regime": "crash",
+        "equity": 10006.66,
+        "current_vol": 0.8815,
+        "cooldown": 10,
+        "swap_executed": true
+      },
+      {
+        "tick": 1600,
+        "psi": 0.0,
+        "auc": 0.8722,
+        "drift_detected": true,
+        "active_version": "candidate",
+        "regime": "crash",
+        "equity": 10005.68,
+        "current_vol": 11.5979,
+        "cooldown": 5,
+        "swap_executed": true
+      },
+      {
+        "tick": 1700,
+        "psi": 0.0,
+        "auc": 0.8802,
+        "drift_detected": true,
+        "active_version": "candidate",
+        "regime": "crash",
+        "equity": 10001.9,
+        "current_vol": 42.6103,
+        "cooldown": 5,
+        "swap_executed": true
+      },
+      {
+        "tick": 1800,
+        "psi": 0.0,
+        "auc": 0.9152,
+        "drift_detected": true,
+        "active_version": "candidate",
+        "regime": "recovery",
+        "equity": 10028.08,
+        "current_vol": 0.6088,
+        "cooldown": 15,
+        "swap_executed": true
+      },
+      {
+        "tick": 1900,
+        "psi": 0.0,
+        "auc": 0.9532,
+        "drift_detected": true,
+        "active_version": "candidate",
+        "regime": "recovery",
+        "equity": 10027.56,
+        "current_vol": 0.7839,
+        "cooldown": 12,
+        "swap_executed": true
+      },
+      {
+        "tick": 2000,
+        "psi": 0.0,
+        "auc": 0.968,
+        "drift_detected": true,
+        "active_version": "candidate",
+        "regime": "recovery",
+        "equity": 10027.76,
+        "current_vol": 0.5985,
+        "cooldown": 15,
+        "swap_executed": true
+      },
+      {
+        "tick": 2100,
+        "psi": 0.0,
+        "auc": 0.98,
+        "drift_detected": true,
+        "active_version": "candidate",
+        "regime": "recovery",
+        "equity": 10027.68,
+        "current_vol": 0.7606,
+        "cooldown": 12,
+        "swap_executed": true
+      },
+      {
+        "tick": 2200,
+        "psi": 0.0,
+        "auc": 0.9784,
+        "drift_detected": true,
+        "active_version": "candidate",
+        "regime": "recovery",
+        "equity": 10027.64,
+        "current_vol": 0.722,
+        "cooldown": 13,
+        "swap_executed": true
+      },
+      {
+        "tick": 2300,
+        "psi": 0.0,
+        "auc": 0.9556,
+        "drift_detected": true,
+        "active_version": "candidate",
+        "regime": "recovery",
+        "equity": 10027.42,
+        "current_vol": 0.6289,
+        "cooldown": 15,
+        "swap_executed": true
+      },
+      {
+        "tick": 2400,
+        "psi": 0.0,
+        "auc": 0.9373,
+        "drift_detected": true,
+        "active_version": "candidate",
+        "regime": "recovery",
+        "equity": 10027.36,
+        "current_vol": 0.517,
+        "cooldown": 18,
+        "swap_executed": true
+      }
+    ]
+  },
+  "wfcv": {
+    "model_type": "momentum",
+    "psi_threshold": 0.25,
+    "auc_threshold": 0.72,
+    "folds": [
+      {
+        "fold_id": 1,
+        "label": "quiet->stress",
+        "n_train": 979,
+        "n_test": 499,
+        "directional_accuracy": 0.4589,
+        "sharpe_ratio": 1.903,
+        "max_drawdown_pct": 0.18,
+        "fold_return_pct": -0.11,
+        "psi": 0.0443,
+        "adversarial_auc": 0.6485,
+        "drift_triggered": false,
+        "n_long": 0,
+        "n_short": 499,
+        "n_flat": 0,
+        "final_equity": 9988.75,
+        "calibrated": true,
+        "vol_executor_active": true
+      },
+      {
+        "fold_id": 2,
+        "label": "stress->crash",
+        "n_train": 1479,
+        "n_test": 299,
+        "directional_accuracy": 0.5,
+        "sharpe_ratio": 0.295,
+        "max_drawdown_pct": 1.3,
+        "fold_return_pct": 0.07,
+        "psi": 3.6367,
+        "adversarial_auc": 0.9906,
+        "drift_triggered": true,
+        "n_long": 0,
+        "n_short": 296,
+        "n_flat": 3,
+        "final_equity": 10007.3,
+        "calibrated": true,
+        "vol_executor_active": true
+      },
+      {
+        "fold_id": 3,
+        "label": "crash->recovery",
+        "n_train": 1779,
+        "n_test": 699,
+        "directional_accuracy": 0.2618,
+        "sharpe_ratio": -0.614,
+        "max_drawdown_pct": 0.01,
+        "fold_return_pct": -0.01,
+        "psi": 1.3302,
+        "adversarial_auc": 0.6699,
+        "drift_triggered": true,
+        "n_long": 0,
+        "n_short": 699,
+        "n_flat": 0,
+        "final_equity": 9998.8,
+        "calibrated": true,
+        "vol_executor_active": true
+      }
+    ],
+    "summary": {
+      "mean_sharpe": 0.528,
+      "mean_accuracy": 0.4069,
+      "mean_max_dd_pct": 0.5,
+      "folds_with_drift": 2,
+      "total_folds": 3
+    }
+  },
+  "pretrain_info": {
+    "n_cycles": 2,
+    "n_train_ticks": 5000,
+    "n_sim_ticks": 2500,
+    "pit_split_tick": 5000,
+    "fisher_decay": 0.9,
+    "regime_composition": {
+      "quiet": 2000,
+      "stress": 1000,
+      "crash": 600,
+      "recovery": 1400
+    }
+  },
+  "fisher_stability": {
+    "local_std": 11403900.45269,
+    "pretrained_std": 0.37322,
+    "improvement_pct": 100.0
+  },
+  "calibration": {
+    "baseline": {
+      "a": 1.00669,
+      "b": -0.75992,
+      "mean_calibrated_prob": 0.3181,
+      "std_calibrated_prob": 0.1819,
+      "n_val": 195
+    },
+    "candidate": {
+      "a": 3.53716,
+      "b": -1.06532,
+      "mean_calibrated_prob": 0.2566,
+      "std_calibrated_prob": 0.2434,
+      "n_val": 195
+    }
+  },
+  "vol_executor": {
+    "type": "VolatilityTargetedExecutor",
+    "target_vol": 0.19,
+    "base_trade_size": 100.0,
+    "long_threshold": 0.55,
+    "short_threshold": 0.45,
+    "min_trade_size": 5.0,
+    "regime_parameters": {
+      "quiet": {
+        "vol": 0.19,
+        "scale_ratio": 1.0,
+        "trade_size": 100.0
+      },
+      "stress": {
+        "vol": 0.44,
+        "scale_ratio": 0.432,
+        "trade_size": 43.2
+      },
+      "crash": {
+        "vol": 0.95,
+        "scale_ratio": 0.2,
+        "trade_size": 20.0
+      },
+      "recovery": {
+        "vol": 0.56,
+        "scale_ratio": 0.339,
+        "trade_size": 33.9
+      }
+    }
+  },
+  "dynamic_cooldown": {
+    "type": "VolatilityScaledCooldown",
+    "base_cooldown": 50,
+    "vol_ref": 0.19,
+    "min_cooldown": 5,
+    "max_cooldown": 200,
+    "recovery_fraction": 0.85,
+    "n_swaps": 21
+  },
+  "weight_comparison": [
+    {
+      "feature": "mom_short",
+      "pretrained_w": -0.061414,
+      "candidate_w": -0.009143,
+      "fisher": 0.056254
+    },
+    {
+      "feature": "mom_med",
+      "pretrained_w": 0.001749,
+      "candidate_w": -0.015244,
+      "fisher": 0.017972
+    },
+    {
+      "feature": "vol",
+      "pretrained_w": 0.024083,
+      "candidate_w": -0.023448,
+      "fisher": 0.281353
+    },
+    {
+      "feature": "vol_z",
+      "pretrained_w": 0.010437,
+      "candidate_w": -0.002505,
+      "fisher": 0.004657
+    },
+    {
+      "feature": "ema_imb",
+      "pretrained_w": 0.008265,
+      "candidate_w": -0.004058,
+      "fisher": 1.0
+    },
+    {
+      "feature": "vol_of_vol",
+      "pretrained_w": -0.014396,
+      "candidate_w": 0.020975,
+      "fisher": 0.656459
+    }
+  ],
+  "elapsed_seconds": 0.719
+}
