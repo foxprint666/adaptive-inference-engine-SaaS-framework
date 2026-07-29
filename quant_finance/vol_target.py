@@ -78,13 +78,17 @@ class VolatilityTargetedExecutor:
         base_trade_size:   float = 100.0,
         long_threshold:    float = 0.55,
         short_threshold:   float = 0.45,
-        min_trade_size:    float = 5.0,
+        min_trade_size:    float = 1.0,    # Phase 2: min 1 share (live broker)
+        fee_per_share:     float = 0.005,  # Alpaca: $0.005/share
+        min_fee:           float = 1.00,   # Alpaca: min $1.00 per ticket
     ):
-        self.target_vol     = target_volatility
-        self.base_size      = base_trade_size
+        self.target_vol      = target_volatility
+        self.base_size       = base_trade_size
         self.long_threshold  = long_threshold
         self.short_threshold = short_threshold
         self.min_size        = min_trade_size
+        self.fee_per_share   = fee_per_share
+        self.min_fee         = min_fee
 
     # ── Core computation ───────────────────────────────────────────────────
 
@@ -99,11 +103,28 @@ class VolatilityTargetedExecutor:
 
     def compute_trade_size(self, current_vol: float) -> float:
         """
-        Return the vol-adjusted lot size.
-        Q_t = Q_base * min(1, sigma_target / sigma_t)
+        Return the vol-adjusted lot size as an integer number of shares.
+
+        Formula:
+            Q_raw    = Q_base * min(1, sigma_target / sigma_t)
+            Q_final  = max(Q_min=1, floor(Q_raw))   <- integer lots
+
+        Phase 2 broker constraint: orders must be whole shares (no fractional
+        lot sizing). Q_min=1 ensures we never submit a zero-share order.
         """
         raw = self.base_size * self.scale_ratio(current_vol)
-        return max(self.min_size, raw)
+        return max(self.min_size, math.floor(raw))  # integer lots, min 1 share
+
+    def fee_for_qty(self, qty: float) -> float:
+        """
+        Alpaca broker fee: $0.005/share, minimum $1.00 per ticket.
+
+            fee = max($1.00, qty * $0.005)
+
+        Used by live_engine and risk_ledger to compute net P&L after
+        broker micro-frictions.
+        """
+        return max(self.min_fee, int(math.floor(qty)) * self.fee_per_share)
 
     def compute_signal(
         self,
@@ -162,6 +183,7 @@ class VolatilityTargetedExecutor:
         return summary
 
     def describe(self) -> Dict:
+        regimes = {"quiet": 0.19, "stress": 0.44, "crash": 0.95, "recovery": 0.56}
         return {
             "type":              "VolatilityTargetedExecutor",
             "target_vol":        self.target_vol,
@@ -169,7 +191,11 @@ class VolatilityTargetedExecutor:
             "long_threshold":    self.long_threshold,
             "short_threshold":   self.short_threshold,
             "min_trade_size":    self.min_size,
-            "regime_parameters": self.regime_summary(
-                {"quiet": 0.19, "stress": 0.44, "crash": 0.95, "recovery": 0.56}
-            ),
+            "fee_model":         f"max(${self.min_fee:.2f}, ${self.fee_per_share:.3f}/share)",
+            "lot_rounding":      "floor(Q) -- integer lots only (broker constraint)",
+            "regime_parameters": self.regime_summary(regimes),
+            "regime_fees": {
+                name: f"${self.fee_for_qty(self.compute_trade_size(vol)):.2f}"
+                for name, vol in regimes.items()
+            },
         }
