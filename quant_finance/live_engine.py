@@ -209,7 +209,7 @@ async def run_engine(
         )
         ok, reason = breaker.approve(proposal)
         if not ok:
-            if tick_n % 50 == 0:
+            if tick_n % 500 == 0:  # Throttled console log (every 500 ticks)
                 print(f"  [BREAKER] {reason}")
             if "TRIPPED" in reason:
                 state = EngineState.CIRCUIT_OPEN
@@ -227,9 +227,20 @@ async def run_engine(
 
             if fill.status not in ("error", "blocked_open_position",) and \
                not fill.status.startswith("error"):
-                breaker.set_position_open(True)
-                position_side = order.side
-                entry_price   = fill.fill_price or mid
+
+                if position_side and position_side != order.side:
+                    # Position exit / reversal filled!
+                    print(f"  [LIVE] EXIT/REVERSE order filled | {order.side.upper()} {order.qty}x {symbol} @ ${fill.fill_price:.2f}")
+                    position_side = ""
+                    entry_price   = 0.0
+                    breaker.set_position_open(False)
+                else:
+                    # New position entry filled!
+                    position_side = order.side
+                    entry_price   = fill.fill_price or mid
+                    breaker.set_position_open(True, side=order.side)
+                    print(f"  [LIVE] ENTRY order filled | {order.side.upper()} {order.qty}x {symbol} @ ${entry_price:.2f}")
+
                 ledger.record_fill(fill, vol_ann=vol_ann)
 
                 # Update equity from account (every order)

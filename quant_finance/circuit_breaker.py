@@ -79,6 +79,7 @@ class CircuitBreaker:
         self._trip_reason: str         = ""
         self._consec_errors: int       = 0
         self._has_position: bool       = False
+        self._open_side: Optional[str] = None
         self._buffer_ready: bool       = False
         self._last_reset_day: Optional[datetime.date] = None
 
@@ -111,8 +112,9 @@ class CircuitBreaker:
         """Call on every successful REST response."""
         self._consec_errors = 0
 
-    def set_position_open(self, open_: bool) -> None:
+    def set_position_open(self, open_: bool, side: Optional[str] = None) -> None:
         self._has_position = open_
+        self._open_side    = side if open_ else None
 
     # ----------------------------------------------------------------
     # Core gate
@@ -144,9 +146,9 @@ class CircuitBreaker:
         if order.qty < 1:
             return False, "QTY_ZERO: qty < 1"
 
-        # Guard 4: open position
-        if self._has_position:
-            return False, "POSITION: existing open position"
+        # Guard 4: open position (block same-side double entry; allow opposite-side exit/reversal)
+        if self._has_position and self._open_side == order.side:
+            return False, f"POSITION: already holding open {order.side} position"
 
         return True, ""
 
