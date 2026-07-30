@@ -36,3 +36,7 @@ htmlcov/
 models/
 data/
 logs/
+
+start_live.ps1
+*.jsonl
+quant_finance/results/
