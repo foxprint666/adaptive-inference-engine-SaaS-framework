@@ -124,14 +124,20 @@ class LiveFeed:
             "key":    self._key,
             "secret": self._secret,
         }))
-        resp = json.loads(await ws.recv())
-        msgs = resp if isinstance(resp, list) else [resp]
-        for m in msgs:
-            if m.get("T") == "success" and m.get("msg") == "authenticated":
-                return
-            if m.get("T") == "error":
-                raise ConnectionError(f"Alpaca auth error: {m.get('msg')}")
-        raise ConnectionError(f"Unexpected auth response: {resp}")
+        # Alpaca WebSocket sends [{"T": "success", "msg": "connected"}] upon open
+        # followed by [{"T": "success", "msg": "authenticated"}] after auth packet.
+        for _ in range(5):
+            raw = await ws.recv()
+            resp = json.loads(raw)
+            msgs = resp if isinstance(resp, list) else [resp]
+            for m in msgs:
+                if m.get("T") == "success" and m.get("msg") == "authenticated":
+                    return
+                if m.get("T") == "error":
+                    raise ConnectionError(f"Alpaca auth error: {m.get('msg')}")
+                if m.get("T") == "success" and m.get("msg") == "connected":
+                    continue  # Ignore welcome frame, await auth response
+        raise ConnectionError("Timed out waiting for Alpaca authentication response")
 
     async def _subscribe(self, ws) -> None:
         await ws.send(json.dumps({
