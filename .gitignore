@@ -40,3 +40,5 @@ logs/
 start_live.ps1
 *.jsonl
 quant_finance/results/
+
+start_live.cmd
